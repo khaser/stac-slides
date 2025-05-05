@@ -1,0 +1,317 @@
+\documentclass[10pt,aspectratio=169,hyperref={pdftex,unicode},xcolor=dvipsnames]{beamer}
+\usepackage[english,russian]{babel}
+\usepackage[utf8x]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage{cmap}
+\usepackage{paratype}
+\newcommand{\mintedoptions}{outputdir=latexmk-build}
+\usepackage[\mintedoptions]{minted}
+\usepackage[normalem]{ulem} % для зачеркнутого текста
+\usepackage{subcaption}
+\usepackage{pgfplots}
+\usepackage{pgfplotstable}
+\usepackage{wrapfig}
+\usepackage{fancyvrb}
+
+\usetheme{metropolis}
+\usefonttheme[]{professionalfonts}  % запрещаем beamer'у перезаписывать мат. шрифты
+\metroset{numbering=none}
+\metroset{subsectionpage=progressbar}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    pdfpagemode=FullScreen,
+}
+
+\setbeamercolor{frametitle}{fg=black}
+\setbeamertemplate{frametitle}
+{
+ \vspace{3mm}\Large\insertframetitle\par\normalsize
+}
+\setbeamertemplate{title separator}{}
+\setbeamertemplate{footnote separator}{}
+
+\usetikzlibrary{shapes.geometric,arrows,fit,matrix,positioning}
+\tikzset
+{
+    treenode/.style = {circle, draw=black, align=center, minimum size=1cm},
+    subtree/.style  = {isosceles triangle, draw=black, align=center, minimum height=2cm, minimum width=2cm, shape border rotate=90, anchor=north}
+}
+
+\usebackgroundtemplate{\includegraphics[width=\paperwidth,height=\paperheight]{./common/background_white.jpg}}
+
+\logo{\vspace{-0.7cm}\includegraphics[width=6mm]{./common/short-v.pdf}\hspace*{1.08\textwidth}}
+
+\institute
+{
+  \begin{columns}
+    \begin{column}{1.5cm}
+    \includegraphics[height=15mm,keepaspectratio]{./common/math-cs.pdf}
+    \end{column}
+    \begin{column}{4cm}
+          Факультет математики и компьютерных наук СПбГУ
+    \end{column}
+  \end{columns}
+}
+
+\begin{document}
+
+\begin{frame}[plain]
+  \begin{center}
+    \textbf{ Андрей Хорохорин }
+
+    { \Large\textbf{Разработка анализатора производительности программ по трассе исполнения с учётом микроархитектурных особенностей процессорного комплекса}}
+
+    { Выпускная квалификационная работа }
+
+    { \small Научный руководитель: Е.М. Линский }
+
+    11.06.2025
+
+  \end{center}
+
+
+  \begin{columns}
+    \begin{column}{1cm}
+    \includegraphics[height=15mm,keepaspectratio]{./common/math-cs.pdf}
+    \end{column}
+    \begin{column}{10cm}
+      \small
+          Факультет математики и~компьютерных наук СПбГУ\\
+          Программа <<Современное программирование>>
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\usebackgroundtemplate{}
+
+\begin{frame}[fragile]{ Постановка задачи }
+    При разработке производительных процессорных ядер для оценки полезности
+    нововведений постоянно прибегают к измерению на бенчмарках.
+
+    % Не всегда нововведение показывает лишь положительных эффект, в таких случаях
+    % найти проблему бывает очень трудоёмко, а иногда и не возможно.
+
+    % Сейчас для поиска проблемных мест наиболее пригодна трасса выполнения,
+    % которая выглядит следующим образом:
+
+    Пример HWT трассы:
+\begin{verbatim}
+< 5 > [00800051fc] lh      a4, 2(a4)        RD[0e]=000000000000000f
+< 5 > [0080005200] bne     s9, a4, pc - 12
+< 6 > [00800051f4] c.ld    a5, 0(a5)        RD[0f]=00000000800136b8
+\end{verbatim}
+    % Немного про hwt:
+    % * проприетарная, кодируется аппаратурой без потери производительности
+    % * привести скриншоты
+    % * минимально влияет на динамику исполнения
+    % * минусы:
+    %     * доступна только на ПЛИС
+    %     * сказать, что занимает много места
+
+    Главная цель: облегчить анализ производительности и поиск проблемных мест,
+    при изменении как аппаратной, так и программной части.
+
+    % Разработать инструмент для поиска проблемных с точки зрения производительности мест,
+    % которые будут называться далее средством профилировки
+    % Желательно с пояснением причины и место задержек.
+
+    \begin{itemize}
+        \pause \item возможность работать без ОС
+        \pause \item учёт микроархитектурных особенностей при анализе
+        \pause \item минимальные искажения динамики исполнения
+        \pause \item удобство использования
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{ Обзор средств профилировки программ }
+    \begin{itemize}
+        \item
+            HPM \newline
+            Пример: Perf, Intel V-Tune
+        \item
+            Сэмплирующие \newline
+            Пример: Perf, Google Performance Tools
+        \item
+            Программные циклоточные эмуляторы \newline
+            Пример: Callgrind, Gem5
+    \end{itemize}
+
+    \only<1>{\vspace{\baselineskip}}
+    \only<2>{ И всё не очень подходит в нашей ситуации! }
+
+    % HPM
+    %   при работе с HPM необходимо заранее знать блок кода, на котором
+    %   измеряются свойства программы. Поэтому на практике код может
+    %   приходиться запустить до нескольких десятков раз.
+    %   Частое считывание HPM влияет на динамику исполнения программы.
+    % Сэмплирующие
+    %   работают только под ОС
+    %   не позволяют учесть микроархитектурные особенности для
+    %   распознавания проблемы
+    % Циклоточные эмуляторы
+    %   решают проблему, но сложно поддерживать в актуальном состоянии
+    %   предлагаемое решение чем-то похоже, но проще в реализации и поддержке
+
+    \textit{
+        \footnotesize
+        HPM~--- Hardware Performance Counters (Аппаратные счётчики производительности)
+    }
+\end{frame}
+
+\begin{frame}{ Общая схема решения }
+    % * Идея: обрабатывать трассу поточно на хосте, подключенном к FPGA,
+    %   который будет через PCIE получать HWT во время выполнения
+    % * анализ должен работать достаточно быстро, чтобы не тормозить FPGA
+    % * по возможности необходимо использовать минимум информации о микроархитектуре
+    %   и максимум информации непосредственно из трассы.
+    %   (чтобы при изменении небольших изменений в железе анализ не приходилось корректировать)
+    % * бенчмарк должен запускаться один раз
+    % * не требуется дополнительная инструментация кода
+    \begin{center}
+        \includegraphics[width=\textwidth,keepaspectratio]{./images/stac_arch.png}
+    \end{center}
+    \begin{itemize}
+        \pause \item анализ должен работать достаточно быстро, чтобы не тормозить FPGA
+        \pause \item бенчмарк запускается один раз, трасса не записывается на диск
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{ Пример применения }
+    Проблема: очки бенчмарка \href{https://github.com/eembc/coremark}{coremark}
+    колеблются на $\sim2\%$ в зависимости от длины строки с флагами компиляции.
+    % (согласитесь мало, но не приятно)
+    % хочется понять, откуда такое поведение возникает.
+
+    За основу возьмём два исполняемых файла (первый лучше второго).
+    Запускаем для обоих профилировщик, получая два файла с профилем исполнения.
+\end{frame}
+
+\begin{frame}{ Пример применения }
+    Выводим статистику по функциям:
+    \begin{figure}
+        \begin{subfigure}{0.45\textwidth}
+            \centering
+            \includegraphics[height=0.8\textheight,keepaspectratio]{./images/stacd_functions.png}
+        \end{subfigure}
+        \begin{subfigure}{0.45\textwidth}
+            \centering
+            \only<1>{\includegraphics[height=0.8\textheight,keepaspectratio]{}}
+            \only<2>{
+                \includegraphics[height=0.8\textheight,keepaspectratio]{./images/stacd_functions_zoom.png}
+            }
+        \end{subfigure}
+    \end{figure}
+
+    % Справа можно увидеть основные метрики, необходимые для анализа производительности.
+    % Любая задержка, распознаётся в одну из метрик, называние которой заканчивается на `_stall`
+\end{frame}
+
+\begin{frame}{ Пример применения }
+    Сравнивать большое количество метрик на двух графах достаточно
+    не удобно, поэтому можно воспользоваться режим для определения различий.
+
+    % В этом режиме статистика базового (первого) запуска вычитается из второго.
+
+    % Видно, что время выполнения второго варианта значительно отличается от первого
+    % только в рамках одной функции.
+
+    \pause
+    % Выдедем побольше метрик
+    \begin{figure}
+        \begin{subfigure}{0.45\textwidth}
+            \centering
+            \includegraphics[height=0.7\textheight,keepaspectratio]{./images/stacd_diff.png}
+        \end{subfigure}
+        \begin{subfigure}{0.45\textwidth}
+            \centering
+            \only<2>{\includegraphics[height=0.7\textheight,keepaspectratio]{}}
+            \only<3>{
+                \includegraphics[height=0.7\textheight,keepaspectratio]{./images/stacd_diff_zoom.png}
+            }
+        \end{subfigure}
+    \end{figure}
+
+    % Справа можно увидеть основные метрики, необходимые для анализа производительности.
+    % Любая задержка, распознаётся в одну из метрик, называние которой заканчивается на `_stall`
+\end{frame}
+
+\begin{frame}[fragile]{ Сужаем область поиска }
+    Выведем карту базовых блоков заданной функции.
+    % раскрасив её по количеству увеличившихся задержек.
+
+    % видим, что почти все задержки распределены в двух местах
+    % на самом деле эти два места идентичны, поэтому рассмотрим только одно
+
+\begin{SaveVerbatim}[]{VerbEnv}
+800052f0:	ld a1, 8(a5)
+800052f2:	lbu s6, 0(a1)
+800052f6:	beq s7, s6, 80005204
+800052fa:	ld a5, 0(a5)
+800052fc:	bnez a5, 800052f0
+\end{SaveVerbatim}
+
+    \pause
+    \begin{figure}
+        \begin{subfigure}{0.45\textwidth}
+            \centering
+            \includegraphics[height=0.7\textheight,keepaspectratio]{./images/stacd_blocks.png}
+        \end{subfigure}
+        \begin{subfigure}{0.45\textwidth}
+            \centering
+            \only<2>{\includegraphics[height=0.7\textheight,keepaspectratio]{}}
+            \only<3>{
+                \includegraphics[width=5cm,keepaspectratio]{./images/stacd_blocks_zoom.png}
+                \newline
+
+                \BUseVerbatim[fontshape=it,fontsize=\footnotesize,fontfamily=courier]{VerbEnv}
+            }
+        \end{subfigure}
+    \end{figure}
+
+    % Справа можно увидеть основные метрики, необходимые для анализа производительности.
+    % Любая задержка, распознаётся в одну из метрик, называние которой заканчивается на `_stall`
+\end{frame}
+
+\begin{frame}{ Архитектура разработанного средства }
+    \begin{figure}
+        \centering
+        \includegraphics[height=0.8\textheight,keepaspectratio]{./images/stac_classes.png}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{ Возможности для дальнейшей работы }
+    \begin{itemize}
+        \item поддержка трассировки процесса, запущенного под linux
+        \item поддержка формата трассы, с большим количеством видимых стадий
+              выполнения инструкций
+        \item улучшения в user experience.
+            \begin{itemize}
+                \item переход на QT/GTK, интерактивность
+                \item возможность вводить пользователькие метрики в виде формул над существующими.
+            \end{itemize}
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{ Спасибо за внимание! }
+TODO: открыть репозиторий и прикрепить сюда ссылку + QR
+\end{frame}
+
+% \begin{frame}{ Ссылки на связанные работы }
+% \begin{thebibliography}{9}
+%
+% \bibitem{intel_top_down}
+% A Top-Down method for performance analysis and counters architecture (2014), Yasin, Ahmad
+%
+% doi:10.1109/ISPASS.2014.6844459
+%
+% \bibitem{riscv_spec}
+% The RISC-V Instruction Set Manual Volume I: Unprivileged ISA, Version 20240411
+%
+% \end{thebibliography}
+% \end{frame}
+
+\end{document}
