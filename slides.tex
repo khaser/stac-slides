@@ -87,6 +87,7 @@
 \end{frame}
 
 \usebackgroundtemplate{}
+\setbeamertemplate{footline}[frame number]
 
 \begin{frame}[fragile]{ Постановка задачи }
     При разработке производительных процессорных ядер для оценки полезности
@@ -112,7 +113,7 @@
     %     * доступна только на ПЛИС
     %     * сказать, что занимает много места
 
-    Главная цель: облегчить анализ производительности и поиск проблемных мест,
+    Главная цель: облегчить анализ производительности и поиск проблемных мест
     при изменении как аппаратной, так и программной части.
 
     % Разработать инструмент для поиска проблемных с точки зрения производительности мест,
@@ -120,6 +121,7 @@
     % Желательно с пояснением причины и место задержек.
 
     \begin{itemize}
+        \pause \item подсказывать причину и место инцидента
         \pause \item возможность работать без ОС
         \pause \item учёт микроархитектурных особенностей при анализе
         \pause \item минимальные искажения динамики исполнения
@@ -130,19 +132,24 @@
 \begin{frame}{ Обзор средств профилировки программ }
     \begin{itemize}
         \item
-            HPM \newline
-            Пример: Perf, Intel V-Tune
+            HPM\textit{
+                \footnotesize
+                ~--- Hardware Performance Monitors (Аппаратные счётчики производительности)
+            }
+            \newline
+                Пример: Perf, Intel V-Tune
         \item
             Сэмплирующие \newline
             Пример: Perf, Google Performance Tools
         \item
-            Программные циклоточные эмуляторы \newline
-            Пример: Callgrind, Gem5
+            Программные потактовые симуляторы \newline
+            Пример: Gem5
     \end{itemize}
 
-    \only<1>{\vspace{\baselineskip}}
+    % \only<1>{\vspace{\baselineskip}}
     \only<2>{ И всё не очень подходит в нашей ситуации! }
 
+    % (для ускорения текст ниже читать не стоит)
     % HPM
     %   при работе с HPM необходимо заранее знать блок кода, на котором
     %   измеряются свойства программы. Поэтому на практике код может
@@ -156,10 +163,6 @@
     %   решают проблему, но сложно поддерживать в актуальном состоянии
     %   предлагаемое решение чем-то похоже, но проще в реализации и поддержке
 
-    \textit{
-        \footnotesize
-        HPM~--- Hardware Performance Counters (Аппаратные счётчики производительности)
-    }
 \end{frame}
 
 \begin{frame}{ Общая схема решения }
@@ -276,6 +279,55 @@
     % Любая задержка, распознаётся в одну из метрик, называние которой заканчивается на `_stall`
 \end{frame}
 
+\begin{frame}{ Метрики }
+    \begin{figure}
+        \centering
+        \includegraphics[height=0.8\textheight,keepaspectratio]{./images/stac_stalls.png}
+    \end{figure}
+\end{frame}
+
+\begin{frame}[fragile]{ Пример: Late ALU }
+    \begin{minipage}[]{\linewidth}
+    \begin{minipage}[]{0.5\linewidth}
+    \centering
+    \paragraph{Код без задержек}
+    \noindent
+    \begin{minted}[fontsize=\footnotesize]{asm}
+    ld x1, 0(addr1)
+    ld x2, 0(addr2)
+    addi x1, x1, 1 (late)
+    addi x1, x1, 2 (late)
+    addi x1, x1, 3 (late)
+    addi x2, x2, 1
+    addi x2, x2, 2
+    addi x2, x2, 3
+    /* x1, x2 вычислено */
+    sd x1, 0(addr1)
+    sd x2, 0(addr2)
+    \end{minted}
+    \end{minipage}
+    \begin{minipage}[]{0.50\linewidth}
+    \centering
+    \paragraph{Код с существенной задержкой}
+    \noindent
+    \begin{minted}[fontsize=\footnotesize]{asm}
+ld x1, 0(addr1)
+ld x2, 0(addr2)
+addi x1, x1, 1 (late)
+addi x2, x2, 1 (late)
+addi x1, x1, 2 (late)
+addi x2, x2, 2 (late)
+addi x1, x1, 3 (late)
+addi x2, x2, 3 (late)
+/* x1 и x2 будут вычислены через 3 такта */
+sd x1, 0(addr1)
+sd x2, 0(addr2)
+    \end{minted}
+    \end{minipage}
+\end{minipage}
+
+\end{frame}
+
 \begin{frame}{ Архитектура разработанного средства }
     \begin{figure}
         \centering
@@ -283,21 +335,49 @@
     \end{figure}
 \end{frame}
 
-\begin{frame}{ Возможности для дальнейшей работы }
+\begin{frame}{ Результаты работы }
+    В результате разработан инструмент, который:
     \begin{itemize}
-        \item поддержка трассировки процесса, запущенного под linux
-        \item поддержка формата трассы, с большим количеством видимых стадий
-              выполнения инструкций
-        \item улучшения в user experience.
-            \begin{itemize}
-                \item переход на QT/GTK, интерактивность
-                \item возможность вводить пользователькие метрики в виде формул над существующими.
-            \end{itemize}
+        \item
+        пригоден для поиска мест и причин ухудшений производительности
+              % как увидели на разобранном примере
+        \pause \item
+        в большинстве сценариев способен обрабатывать данные
+        без потери скорости выполнения на FPGA
+        \pause \item
+        требует лишь один запуск теста производительности для
+        сбора всех метрик
+        \pause \item
+        значительно более точен, чем профилировка известными
+        средствами
+        \pause \item
+        расширяем как в сторону добавления других микроархитектур,
+        так и в сторону смены формата трассы.
     \end{itemize}
 \end{frame}
 
+% \begin{frame}{ Возможности для дальнейшей работы }
+%     \begin{itemize}
+%         \item поддержка трассировки процесса, запущенного под linux
+%         \item поддержка формата трассы, с большим количеством видимых стадий
+%               выполнения инструкций
+%         \item улучшения в user experience.
+%             \begin{itemize}
+%                 \item переход на QT/GTK, интерактивность
+%                 \item возможность вводить пользователькие метрики в виде формул над существующими.
+%             \end{itemize}
+%     \end{itemize}
+% \end{frame}
+
 \begin{frame}{ Спасибо за внимание! }
-TODO: открыть репозиторий и прикрепить сюда ссылку + QR
+    Ссылка на репозиторий с работой: \href{https://github.com/khaser/stac}{github.com/khaser/stac}
+
+    Ссылка на репозиторий со слайдами: \href{https://github.com/khaser/stac}{github.com/khaser/stac-report}
+
+    \begin{figure}
+        \centering
+        \includegraphics[height=0.8\textheight,keepaspectratio]{./images/stac_qr.png}
+    \end{figure}
 \end{frame}
 
 % \begin{frame}{ Ссылки на связанные работы }
