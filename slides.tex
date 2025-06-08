@@ -69,7 +69,7 @@
 
     { \small Научный руководитель: Е.М. Линский }
 
-    11.06.2025
+    10.06.2025
 
   \end{center}
 
@@ -190,22 +190,15 @@
     % хочется понять, откуда такое поведение возникает.
 
     За основу возьмём два исполняемых файла (первый лучше второго).
-    Запускаем для обоих средство профилировки, получая два файла с профилем исполнения.
+    Запускаем для обоих средство профилировки, получая два файла с профилями исполнения.
 \end{frame}
 
 \begin{frame}{ Пример применения }
     Выводим статистику по функциям:
     \begin{figure}
-        \begin{subfigure}{0.45\textwidth}
+        \begin{subfigure}{0.8\textwidth}
             \centering
-            \includegraphics[height=0.8\textheight,keepaspectratio]{./images/stacd_functions.png}
-        \end{subfigure}
-        \begin{subfigure}{0.45\textwidth}
-            \centering
-            \only<1>{\includegraphics[height=0.8\textheight,keepaspectratio]{}}
-            \only<2>{
-                \includegraphics[height=0.8\textheight,keepaspectratio]{./images/stacd_functions_zoom.png}
-            }
+            \includegraphics[height=0.8\textheight,keepaspectratio]{./images/stac_functions.png}
         \end{subfigure}
     \end{figure}
 
@@ -227,13 +220,13 @@
     \begin{figure}
         \begin{subfigure}{0.45\textwidth}
             \centering
-            \includegraphics[height=0.7\textheight,keepaspectratio]{./images/stacd_diff.png}
+            \includegraphics[height=0.7\textheight,keepaspectratio]{./images/stac_diff.png}
         \end{subfigure}
         \begin{subfigure}{0.45\textwidth}
             \centering
-            \only<2>{\includegraphics[height=0.7\textheight,keepaspectratio]{}}
+            \only<2>{\hspace{1cm}}
             \only<3>{
-                \includegraphics[height=0.7\textheight,keepaspectratio]{./images/stacd_diff_zoom.png}
+                \includegraphics[height=0.7\textheight,keepaspectratio]{./images/stac_diff_zoom.png}
             }
         \end{subfigure}
     \end{figure}
@@ -261,13 +254,13 @@
     \begin{figure}
         \begin{subfigure}{0.45\textwidth}
             \centering
-            \includegraphics[height=0.7\textheight,keepaspectratio]{./images/stacd_blocks.png}
+            \includegraphics[height=0.8\textheight,keepaspectratio]{./images/stac_blocks.png}
         \end{subfigure}
         \begin{subfigure}{0.45\textwidth}
             \centering
-            \only<2>{\includegraphics[height=0.7\textheight,keepaspectratio]{}}
+            \only<2>{\hspace{1cm}}
             \only<3>{
-                \includegraphics[width=5cm,keepaspectratio]{./images/stacd_blocks_zoom.png}
+                \includegraphics[height=4.5cm,keepaspectratio]{./images/stac_blocks_zoom.png}
                 \newline
 
                 \BUseVerbatim[fontshape=it,fontsize=\footnotesize,fontfamily=courier]{VerbEnv}
@@ -287,32 +280,79 @@
 \end{frame}
 
 \begin{frame}[fragile]{ Пример: Late ALU }
-    \begin{minipage}[]{\linewidth}
+    % Микроархитектурная особенность с строго очередным выполнением инструкций,
+    % позволяющая спекулятивно отправить на выполнение инструкцию,
+    % зависимость по данным которой ещё не готова.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    stage/.style={rectangle, draw, minimum width=1.5cm, minimum height=1cm},
+    alu/.style={fill=green!20},
+    arrow/.style={->, >=stealth}
+]
+
+% Рисуем стадии конвейера
+\node[stage] (IF) at (0,0) {IF};
+\node[stage,fill=violet!20] (ID) at (2,0) {ID};
+\node[stage,alu] (ALU) at (4,0) {ALU};
+\node[stage] (DC1) at (6,0) {DC-1};
+\node[stage] (DC2) at (8,0) {DC-2};
+\node[stage,alu] (LALU) at (10,0) {ALU};
+\node[stage] (WB) at (12,0) {WB};
+
+% Рисуем стрелки между стадиями
+\draw[arrow] (IF) -- (ID);
+\draw[arrow] (ID) -- (ALU);
+\draw[arrow] (ALU) -- (DC1);
+\draw[arrow] (DC1) -- (DC2);
+\draw[arrow] (DC2) -- (LALU);
+\draw[arrow] (LALU) -- (WB);
+
+\draw[dashed, thick, arrow] (LALU) -- (10, -1) -- (4,-1) -- (ALU);
+
+\end{tikzpicture}
+\caption{Схема рассматриваемого конвейера}
+\label{lalu}
+\end{figure}
+
+    Инструкция исполняется как \textit{late}, если:
+    \begin{itemize}
+        \item
+            На момент начала исполнения существует неразрешённая зависимость по данным.
+        \item
+            Через 3 такта зависимость по данным \textit{почти точно} будет разрешена.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{ Пример: Late ALU }
+\begin{minipage}[]{\linewidth}
     \begin{minipage}[]{0.5\linewidth}
-    \centering
-    \paragraph{Код без задержек}
-    \noindent
-    \begin{minted}[fontsize=\footnotesize]{asm}
-    ld x1, 0(addr1)
-    ld x2, 0(addr2)
-    addi x1, x1, 1 (late)
-    addi x1, x1, 2 (late)
-    addi x1, x1, 3 (late)
-    addi x2, x2, 1
-    addi x2, x2, 2
-    addi x2, x2, 3
-    /* x1, x2 вычислено */
-    sd x1, 0(addr1)
-    sd x2, 0(addr2)
-    \end{minted}
+    \begin{figure}[h]
+        \centering
+        \begin{minted}[fontsize=\footnotesize]{asm}
+ld x1, addr1
+ld x2, addr2
+addi x1, x1, 1 (late)
+addi x1, x1, 2 (late)
+addi x1, x1, 3 (late)
+addi x2, x2, 1
+addi x2, x2, 2
+addi x2, x2, 3
+/* x1, x2 вычислено */
+sd x1, addr1
+sd x2, addr2
+        \end{minted}
+        \label{lalu_good_code}
+        \caption{Код без задержек}
+    \end{figure}
     \end{minipage}
     \begin{minipage}[]{0.50\linewidth}
-    \centering
-    \paragraph{Код с существенной задержкой}
-    \noindent
-    \begin{minted}[fontsize=\footnotesize]{asm}
-ld x1, 0(addr1)
-ld x2, 0(addr2)
+    \begin{figure}[h]
+        \centering
+        \begin{minted}[fontsize=\footnotesize]{asm}
+ld x1, addr1
+ld x2, addr2
 addi x1, x1, 1 (late)
 addi x2, x2, 1 (late)
 addi x1, x1, 2 (late)
@@ -320,12 +360,14 @@ addi x2, x2, 2 (late)
 addi x1, x1, 3 (late)
 addi x2, x2, 3 (late)
 /* x1 и x2 будут вычислены через 3 такта */
-sd x1, 0(addr1)
-sd x2, 0(addr2)
-    \end{minted}
+sd x1, addr1
+sd x2, addr2
+        \end{minted}
+        \label{lalu_bad_code}
+        \caption{Код с задержкой}
+    \end{figure}
     \end{minipage}
 \end{minipage}
-
 \end{frame}
 
 \begin{frame}{ Архитектура разработанного средства }
@@ -361,9 +403,16 @@ sd x2, 0(addr2)
 
     Ссылка на репозиторий со слайдами: \href{https://github.com/khaser/stac}{github.com/khaser/stac-report}
 
-    \begin{figure}
-        \centering
-        \includegraphics[height=0.8\textheight,keepaspectratio]{./images/stac_qr.png}
+    % \begin{center}
+    %     \includegraphics[height=0.6\textheight,keepaspectratio]{./images/stac_qr.png}
+    %
+    %     QR-код ссылки на репозиторий с работой
+    % \end{center}
+    \begin{figure}[h]
+        \includegraphics[height=0.6\textheight,keepaspectratio]{./images/stac_qr.png}
+        \caption{QR-код ссылки на репозиторий с работой}
+        % \caption{Схема рассматриваемого конвейера}
+        \label{qr}
     \end{figure}
 \end{frame}
 
